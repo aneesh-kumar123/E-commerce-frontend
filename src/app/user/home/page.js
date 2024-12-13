@@ -1,19 +1,24 @@
-'use client';
+"use client";
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from "next/navigation";
 import { getProducts } from '@/lib/admin/products';
-import { useRouter } from 'next/navigation';
+import { updateProductToCart } from "@/lib/user/cart";
+const {buyNowOrder} = require('@/lib/user/order');
+import toast from "react-hot-toast";
+import {jwtDecode} from "jwt-decode";
+import BuyNowModal from "@/components/BuyNowModal"; 
+
 
 function Page() {
   const [products, setProducts] = useState([]);
-  const [isClient, setIsClient] = useState(false); // Ensures hydration
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [isBuyNowModalOpen, setIsBuyNowModalOpen] = useState(false);
   const router = useRouter();
-
   // Fetch products on mount
   const fetchProducts = async () => {
     try {
       const productsData = await getProducts();
-      console.log('Fetched products:', productsData); // Debug log
       setProducts(productsData.data);
     } catch (error) {
       console.error('Failed to fetch products:', error);
@@ -21,17 +26,48 @@ function Page() {
   };
 
   useEffect(() => {
-    setIsClient(true); // Ensures hydration
+    fetchProducts();
   }, []);
 
-  useEffect(() => {
-    if (isClient) {
-      fetchProducts();
+  const getUserIdFromToken = () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      toast.error("User not authenticated!");
+      return null;
     }
-  }, [isClient]);
+    const decoded = jwtDecode(token);
+    return decoded.id; // Assumes `id` exists in the token payload
+  };
 
-  const handleLogin = () => {
-    router.push('/login');
+  const handleAddToCart = async (product) => {
+    const userId = getUserIdFromToken();
+    console.log("userid here is we got", userId)
+    if (!userId) return;
+
+    try {
+    const response=  await updateProductToCart(userId, product.id, 1); // Add 1 quantity
+    console.log(" the response after adding to cart is", response)
+      toast.success(`${product.name} added to cart!`);
+    } catch (error) {
+      console.error("Failed to add product to cart:", error.message);
+      toast.error("Failed to add product to cart.");
+    }
+  };
+
+
+  const handleBuyNow = async (product) => {
+    setSelectedProduct(product);
+    setIsBuyNowModalOpen(true); 
+  }
+
+  const closeBuyNowModal = () => {
+    setSelectedProduct(null);
+    setIsBuyNowModalOpen(false);
+  };
+
+  const proceedToBuyNow = (product, quantity) => {
+    setIsBuyNowModalOpen(false); // Close modal
+    router.push(`/user/buynow?productId=${product.id}&quantity=${quantity}`);
   };
 
   return (
@@ -46,6 +82,7 @@ function Page() {
                 alt={product.name}
                 className="w-full object-cover"
               />
+    
               <div className="p-4">
                 <h3 className="text-xl font-semibold text-gray-800">{product.name}</h3>
                 <p className="text-sm text-gray-600 mt-2">{product.description}</p>
@@ -53,13 +90,13 @@ function Page() {
 
                 <div className="mt-4 flex justify-between">
                   <button
-                    onClick={handleLogin}
+                    onClick={() => handleAddToCart(product)}
                     className="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700"
                   >
                     Add to Cart
                   </button>
                   <button
-                    onClick={handleLogin}
+                    onClick={() => handleBuyNow(product)}
                     className="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700"
                   >
                     Buy Now
@@ -72,6 +109,16 @@ function Page() {
           <p className="text-center text-lg text-gray-500">No products available.</p>
         )}
       </div>
+
+      {isBuyNowModalOpen && (
+        <BuyNowModal
+          isOpen={isBuyNowModalOpen}
+          onClose={closeBuyNowModal}
+          product={selectedProduct}
+          onContinue={proceedToBuyNow}
+        />
+      )}
+
     </div>
   );
 }
